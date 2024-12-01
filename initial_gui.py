@@ -37,53 +37,10 @@ def get_next_open_row(board, col):
         if board[r][col] == 0:
             return r
 
-# # Count the number of possible 4-in-a-row combinations for a given player
-# def count_possible_four_in_a_row(board, piece):
-#     score = 0
-
-#     # Horizontal check
-#     for r in range(ROWS):
-#         for c in range(COLS - 3):  # Ensure 4 cells fit horizontally
-#             window = board[r, c:c + 4]
-#             if np.array_equal(window, [piece] * 4):  # Exactly 4 of `piece`
-#                 score += 1
-
-#     # Vertical check
-#     for c in range(COLS):
-#         for r in range(ROWS - 3):  # Ensure 4 cells fit vertically
-#             window = board[r:r + 4, c]
-#             if np.array_equal(window, [piece] * 4):  # Exactly 4 of `piece`
-#                 score += 1
-
-#     # Positive diagonal check (bottom-left to top-right)
-#     for r in range(ROWS - 3):
-#         for c in range(COLS - 3):
-#             window = [board[r + i][c + i] for i in range(4)]
-#             if np.array_equal(window, [piece] * 4):  # Exactly 4 of `piece`
-#                 score += 1
-
-#     # Negative diagonal check (top-left to bottom-right)
-#     for r in range(3, ROWS):
-#         for c in range(COLS - 3):
-#             window = [board[r - i][c + i] for i in range(4)]
-#             if np.array_equal(window, [piece] * 4):  # Exactly 4 of `piece`
-#                 score += 1
-
-#     return score
-
-
-# # Heuristic evaluation based on the opponent's last move and possible 4-in-a-row combinations
-# def evaluate_board(board):
-#     ai_score = count_possible_four_in_a_row(board, -1)  # AI's piece is -1
-#     player_score = count_possible_four_in_a_row(board, 1)  # Player's piece is 1
-
-#     return ai_score - player_score  # AI tries to maximize this score
-
+# Heuristic evaluation of the board for the AI
 def evaluate_window(window, piece):
     score = 0
     opponent_piece = 1 if piece == -1 else -1  # Opponent logic adjusted
-    
-
     if window.count(piece) == 4:
         score += 10  # Win condition
     elif window.count(piece) == 3 and window.count(0) == 1:
@@ -141,7 +98,8 @@ def evaluate_board(board):
 # Maximizing function for Minimax
 def maximize(state, depth):
     if depth == 0 or is_full(state):  # Terminal condition
-        return None, evaluate_board(state)
+        evaluation = evaluate_board(state)
+        return None, evaluation
     
     max_child, max_utility = None, -float('inf')
     valid_moves = [c for c in range(COLS) if is_valid_move(state, c)]
@@ -157,10 +115,11 @@ def maximize(state, depth):
     
     return max_child, max_utility
 
-# Minimizing function for Minimax
+# Minimizing function for Minimax 
 def minimize(state, depth):
     if depth == 0 or is_full(state):  # Terminal condition
-        return None, evaluate_board(state)
+        evaluation = evaluate_board(state)
+        return None, evaluation
     
     min_child, min_utility = None, float('inf')
     valid_moves = [c for c in range(COLS) if is_valid_move(state, c)]
@@ -176,9 +135,63 @@ def minimize(state, depth):
     
     return min_child, min_utility
 
+def maximize_with_pruning(state, depth, alpha, beta):
+    if depth == 0 or is_full(state):  # Terminal condition
+        evaluation = evaluate_board(state)
+        return None, evaluation
+    
+    max_child, max_utility = None, -float('inf')
+    valid_moves = [c for c in range(COLS) if is_valid_move(state, c)]
+    
+    for col in valid_moves:
+        row = get_next_open_row(state, col)
+        child_state = state.copy()
+        drop_piece(child_state, row, col, -1)  # AI's move (AI = -1)
+        
+        _, utility = minimize_with_pruning(child_state, depth - 1, alpha, beta)  # Switch to minimizing
+        
+        if utility > max_utility:
+            max_child, max_utility = col, utility
+        
+        # Alpha-Beta Pruning
+        alpha = max(alpha, max_utility)
+        if beta <= alpha:
+            break  # Prune the remaining branches
+    
+    return max_child, max_utility
+
+# Minimizing function for Minimax with Alpha-Beta Pruning
+def minimize_with_pruning(state, depth, alpha, beta):
+    if depth == 0 or is_full(state):  # Terminal condition
+        evaluation = evaluate_board(state)
+        return None, evaluation
+    
+    min_child, min_utility = None, float('inf')
+    valid_moves = [c for c in range(COLS) if is_valid_move(state, c)]
+    
+    for col in valid_moves:
+        row = get_next_open_row(state, col)
+        child_state = state.copy()
+        drop_piece(child_state, row, col, 1)  # Player's move (Player = 1)
+        
+        _, utility = maximize_with_pruning(child_state, depth - 1, alpha, beta)  # Switch to maximizing
+        
+        if utility < min_utility:
+            min_child, min_utility = col, utility
+        
+        # Alpha-Beta Pruning
+        beta = min(beta, min_utility)
+        if beta <= alpha:
+            break  # Prune the remaining branches
+    
+    return min_child, min_utility
+
 # AI move selection based on Minimax
 def ai_move(board, depth):
     col, _ = maximize(board, depth)  # AI is the maximizer
+    return col
+def ai_move_with_pruning(board, depth):
+    col, _ = maximize_with_pruning(board, depth, -float('inf'), float('inf'))  # AI is the maximizer
     return col
 
 # Draw the board
@@ -251,7 +264,7 @@ def calculate_final_scores(board):
 # Display a setup screen for choosing AI depth and player color
 def setup_screen():
     pygame.init()
-    screen = pygame.display.set_mode((500, 400))
+    screen = pygame.display.set_mode((500, 450))  # Adjusted size to fit all elements
     pygame.display.set_caption("Connect Four Setup")
     font = pygame.font.Font(None, 36)
     small_font = pygame.font.Font(None, 28)
@@ -262,6 +275,7 @@ def setup_screen():
     ai_color = None
     depth = ""
     input_active = False
+    use_alpha_beta = False  # Default to no Alpha-Beta pruning
     running = True
 
     while running:
@@ -291,11 +305,22 @@ def setup_screen():
         depth_display = font.render(depth, True, (0, 0, 0))
         screen.blit(depth_display, (160, 260))
 
+        # Alpha-Beta pruning options
+        alpha_beta_button = pygame.Rect(50, 320, 200, 50)
+        no_alpha_beta_button = pygame.Rect(250, 320, 200, 50)
+        pygame.draw.rect(screen, (0, 0, 255), alpha_beta_button)
+        pygame.draw.rect(screen, (255, 0, 0), no_alpha_beta_button)
+
+        alpha_beta_text = small_font.render("With Alpha-Beta", True, (255, 255, 255))
+        no_alpha_beta_text = small_font.render("Without Alpha-Beta", True, (255, 255, 255))
+        screen.blit(alpha_beta_text, (90, 335))
+        screen.blit(no_alpha_beta_text, (270, 335))
+
         # Start button
-        start_button = pygame.Rect(200, 320, 100, 50)
+        start_button = pygame.Rect(200, 390, 100, 50)
         pygame.draw.rect(screen, (0, 0, 255), start_button)
         start_text = small_font.render("Start", True, (255, 255, 255))
-        screen.blit(start_text, (230, 335))
+        screen.blit(start_text, (230, 405))
         
         pygame.display.flip()
 
@@ -320,11 +345,17 @@ def setup_screen():
                     input_active = True
                 else:
                     input_active = False
+                
+                # Toggle Alpha-Beta pruning
+                if alpha_beta_button.collidepoint(mouse_pos):
+                    use_alpha_beta = True
+                elif no_alpha_beta_button.collidepoint(mouse_pos):
+                    use_alpha_beta = False
 
                 # Start the game if all selections are valid
                 if start_button.collidepoint(mouse_pos):
                     if player_color and depth.isdigit() and int(depth) > 0:
-                        return player_color, ai_color, int(depth)
+                        return player_color, ai_color, int(depth), use_alpha_beta
 
             elif event.type == pygame.KEYDOWN and input_active:
                 # Handle text input for depth
@@ -336,16 +367,17 @@ def setup_screen():
         clock.tick(30)
 
     pygame.quit()
-    return player_color, ai_color, depth
+    return player_color, ai_color, depth, use_alpha_beta
 
 # Main game loop with setup screen
 def play_game():
     global PLAYER_COLOR, AI_COLOR
 
-    # Setup screen for color and depth
-    PLAYER_COLOR, AI_COLOR, depth = setup_screen()
+    # Setup screen for color, depth, and Alpha-Beta pruning selection
+    PLAYER_COLOR, AI_COLOR, depth, use_alpha_beta = setup_screen()
     print(f"Selected Player Color: {PLAYER_COLOR}")
     print(f"Selected AI Depth: {depth}")
+    print(f"Alpha-Beta Pruning: {'Enabled' if use_alpha_beta else 'Disabled'}")
 
     board = create_board()
     turn = 1  # Start with the player
@@ -373,7 +405,11 @@ def play_game():
                         turn = -1  # Switch to AI turn
         # AI turn
         if turn == -1:
-            col = ai_move(board, depth)
+            if use_alpha_beta:
+                col = ai_move_with_pruning(board, depth)  # Use Alpha-Beta pruning
+            else:
+                col = ai_move(board, depth)  # Without Alpha-Beta pruning
+            
             row = get_next_open_row(board, col)
             drop_piece(board, row, col, -1)  # AI move
             draw_board(board, screen)
